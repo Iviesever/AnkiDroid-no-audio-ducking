@@ -155,7 +155,7 @@ jobs:
           version=$(python3 -c 'import json; print(json.load(open("dist/build-info.json"))["version_name"])')
           target=$(python3 -c 'import json; print(json.load(open("dist/build-info.json"))["patch_repository_sha"])')
           title="AnkiDroid $version · 后台音乐音量保持"
-          assets=(dist/*.apk dist/*.tar.gz dist/*.json dist/*.patch dist/SHA256SUMS)
+          assets=(dist/*)
           if gh release view "$tag" >/dev/null 2>&1; then
             draft=$(gh release view "$tag" --json isDraft --jq .isDraft)
             if [[ "$draft" == 'true' ]]; then
