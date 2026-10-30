@@ -1,0 +1,11 @@
+{
+  "upstream_sha": "2e96e57efdc9c58f7497c639559549a8f364b08a",
+  "inputs_hash": "a6aa8a314e34cd5a48fbc713a406be9baa87842cabb2d2fd0d99bffca5b6afbb",
+  "patch_repository_sha": "95aa97c646613abc6b59bf5dae1d06b64ef75718",
+  "version_name": "2.26.0alpha10",
+  "version_code": 322600110,
+  "release_tag": "v2.26.0alpha10-noduck-2e96e57e-3-1",
+  "certificate_sha256": "0a8ebeea7a7d04f21a737debedfb0b2ec439c84936e4bb69dc7f14894f0be42a",
+  "apk_sha256": "64c30536743a7d6afac70ec12880bc39d5e079ab95b331988fed2ddc7c64b03d",
+  "built_at": "2026-10-30T09:16:18.908809+00:00"
+}
