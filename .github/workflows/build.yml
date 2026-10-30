@@ -76,6 +76,9 @@ jobs:
       - name: 安装 Android SDK
         if: steps.plan.outputs.build == 'true'
         uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
 
       - name: 准备编译环境
         if: steps.plan.outputs.build == 'true'
