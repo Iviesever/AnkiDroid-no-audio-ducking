@@ -1,0 +1,184 @@
+name: 跟进上游并构建 APK
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 即使没有上游更新也重新构建
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - 'patches/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/build.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-apk
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 应用补丁并编译
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      built: ${{ steps.plan.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 检查上游更新
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE_BUILD: ${{ inputs.force }}
+        run: |
+          upstream_sha=$(gh api repos/ankidroid/Anki-Android/commits/main --jq .sha)
+          args=()
+          if [[ "$FORCE_BUILD" == 'true' ]]; then args+=(--force); fi
+          python3 scripts/ci.py plan "$upstream_sha" "${args[@]}"
+
+      - name: 拉取本次上游源码
+        if: steps.plan.outputs.build == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ankidroid/Anki-Android
+          ref: ${{ steps.plan.outputs.upstream_sha }}
+          path: upstream
+          persist-credentials: false
+
+      - name: 应用并检查音频补丁
+        if: steps.plan.outputs.build == 'true'
+        id: runtime
+        run: |
+          python3 -m unittest discover -s tests -v
+          python3 scripts/ci.py apply
+          python3 scripts/ci.py runtime
+
+      - name: 安装 JDK
+        if: steps.plan.outputs.build == 'true'
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: jetbrains
+          java-version: ${{ steps.runtime.outputs.java }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: 安装 Android SDK
+        if: steps.plan.outputs.build == 'true'
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+
+      - name: 准备编译环境
+        if: steps.plan.outputs.build == 'true'
+        env:
+          PLATFORM: ${{ steps.runtime.outputs.platform }}
+          BUILD_TOOLS: ${{ steps.runtime.outputs.build_tools }}
+        run: |
+          sdkmanager "platforms;android-$PLATFORM" "build-tools;$BUILD_TOOLS"
+          mkdir -p ~/.gradle
+          printf '%s\n' 'org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8' >> ~/.gradle/gradle.properties
+
+      - name: 缓存 Gradle
+        if: steps.plan.outputs.build == 'true'
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+
+      - name: 编译 ARM64 安装包
+        if: steps.plan.outputs.build == 'true'
+        working-directory: upstream
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTOREPWD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEYALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYPWD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64" || { echo '缺少 APK 签名文件'; exit 1; }
+          umask 077
+          export KEYSTOREPATH="$RUNNER_TEMP/ankidroid-signing.jks"
+          trap 'rm -f "$KEYSTOREPATH"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTOREPATH"
+          ./gradlew :AnkiDroid:assembleFullRelease :AnkiDroid:ktlintMainSourceSetCheck -PabiFilter=arm64-v8a --max-workers=2 --console=plain
+
+      - name: 校验签名并整理发布文件
+        if: steps.plan.outputs.build == 'true'
+        env:
+          UPSTREAM_SHA: ${{ steps.plan.outputs.upstream_sha }}
+        run: python3 scripts/ci.py collect "$UPSTREAM_SHA"
+
+      - name: 保存构建产物
+        if: steps.plan.outputs.build == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: apk-release
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: 发布 APK
+    needs: build
+    if: needs.build.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        if: needs.build.outputs.built == 'true'
+        with:
+          name: apk-release
+          path: dist
+
+      - name: 发布本次构建
+        if: needs.build.outputs.built == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(python3 -c 'import json; print(json.load(open("dist/build-info.json"))["release_tag"])')
+          version=$(python3 -c 'import json; print(json.load(open("dist/build-info.json"))["version_name"])')
+          target=$(python3 -c 'import json; print(json.load(open("dist/build-info.json"))["patch_repository_sha"])')
+          title="AnkiDroid $version · 后台音乐音量保持"
+          assets=(dist/*.apk dist/*.tar.gz dist/*.json dist/*.patch dist/SHA256SUMS)
+          if gh release view "$tag" >/dev/null 2>&1; then
+            draft=$(gh release view "$tag" --json isDraft --jq .isDraft)
+            if [[ "$draft" == 'true' ]]; then
+              gh release upload "$tag" "${assets[@]}" --clobber
+              gh release edit "$tag" --draft=false --latest
+            fi
+          else
+            gh release create "$tag" "${assets[@]}" --target "$target" --title "$title" --notes-file dist/RELEASE_NOTES.md --draft
+            gh release edit "$tag" --draft=false --latest
+          fi
+
+      - name: 记录成功构建
+        if: needs.build.outputs.built == 'true'
+        run: |
+          cp dist/build-info.json last-build.json
+
+      - name: 记录无更新时的定期检查
+        if: needs.build.outputs.built != 'true'
+        run: python3 scripts/ci.py record-check
+
+      - name: 保存上游状态
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add last-build.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore: 更新上游构建记录'
+            git push origin HEAD:main
+          fi
