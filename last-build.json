@@ -1,11 +1,11 @@
 {
-  "upstream_sha": "478911dcb6b232ab53ec636f4073251f505b9eba",
+  "upstream_sha": "36781d2ced7b5ff943ff778527de9ebd4fd478c8",
   "inputs_hash": "a6aa8a314e34cd5a48fbc713a406be9baa87842cabb2d2fd0d99bffca5b6afbb",
-  "patch_repository_sha": "dc56c2868aee44ab6bd02dfbe91425120e5f5696",
+  "patch_repository_sha": "96265e0e7ee38864d30180a9008212985afa5b45",
   "version_name": "2.26.0alpha16",
   "version_code": 322600116,
-  "release_tag": "v2.26.0alpha16-noduck-478911dc-30-1",
+  "release_tag": "v2.26.0alpha16-noduck-36781d2c-31-1",
   "certificate_sha256": "0a8ebeea7a7d04f21a737debedfb0b2ec439c84936e4bb69dc7f14894f0be42a",
-  "apk_sha256": "ecf766063422746026fe626ddaa38de1608857532aa00948d5a244f05acbffa5",
-  "built_at": "2026-11-25T11:28:23.373482+00:00"
+  "apk_sha256": "971bbd240769908b5b30a75878088330547867bb702f8b50f067605f7b325c96",
+  "built_at": "2026-11-26T11:01:01.198860+00:00"
 }
